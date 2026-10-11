@@ -113,6 +113,21 @@ def test_offline_mode_falls_back_to_loudest_moments(tmp_path, sample_video):
     assert job["clips"] and "loudest" in job["message"]
 
 
+@needs_ffmpeg
+def test_clip_never_ends_up_shorter_than_campaign_minimum(tmp_path, sample_video):
+    client, _ = make_client(tmp_path)
+    h = {"X-Clippy-Token": TOKEN}
+    camp = client.post("/campaigns", headers=h, json={"name": "C", "rules_text": "Clips must be 15-60 seconds"}).json()
+    assert camp["requirements"]["min_seconds"] == 15
+    res = client.post(f"/jobs/upload?filename=a.mp4&campaign_id={camp['id']}", headers=h,
+                      content=sample_video.read_bytes())
+    job = wait_for(client, res.json()["id"])
+    assert job["status"] == "done", job
+    clip = job["clips"][0]
+    assert clip["duration"] >= 15
+    assert not [i for i in clip["issues"] if i["level"] == "error"]
+
+
 def test_bad_link_rejected(tmp_path):
     client, _ = make_client(tmp_path)
     res = client.post("/jobs", headers={"X-Clippy-Token": TOKEN}, json={"source_url": "not a link"})
